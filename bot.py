@@ -8,29 +8,29 @@ import pytz
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Twoich serwerów z nowym IP i portami
+# Konfiguracja Twoich serwerów - DANE Z PLAYIT.GG
 SERVERS = [
     {
         "name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
         "type": "Classic",
-        "ip": "188.122.24.247", 
-        "port": 27016, # master_server_port od Classic (Master)
+        "ip": "publication-uneatable.gl.at.ply.gg", 
+        "port": 39500, 
         "password": "OrangeStorm2101",
         "hard_max_players": 24
     },
     {
         "name": "[PL] OrangeStormDST | Shipwrecked | Najlepszy Polski Serwer!",
         "type": "Shipwrecked",
-        "ip": "188.122.24.247",
-        "port": 27019, # master_server_port od Shipwrecked (Island)
+        "ip": "register-coming.gl.at.ply.gg",
+        "port": 39775, 
         "password": "OrangeStorm777",
         "hard_max_players": 12
     },
     {
         "name": "[PL] OrangeStormDST | Forge | Najlepszy Polski Serwer!",
         "type": "The Forge",
-        "ip": "188.122.24.247",
-        "port": 27018, # master_server_port od Forge (Master)
+        "ip": "thomas-holland.gl.at.ply.gg",
+        "port": 39726, 
         "password": "OrangeStorm2026",
         "hard_max_players": 6
     }
@@ -38,9 +38,9 @@ SERVERS = [
 
 def get_server_status(ip, port):
     try:
-        # A2S komunikuje się po UDP
+        # Pytamy przez tunel Playit.gg
         address = (ip, port)
-        info = a2s.info(address, timeout=3.0)
+        info = a2s.info(address, timeout=4.0)
         return True, info.player_count
     except Exception:
         return False, 0
