@@ -89,14 +89,14 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        spacer_count = 55 - len(srv['password'])
+        spacer_count = max(0, 45 - len(srv['password']))
         spacer = "\u2800" * spacer_count
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
-            f"Hasło: `{srv['password']}`{spacer}"
+            f"Hasło:\u00A0`{srv['password']}`{spacer}"
         )
         embed = {
             "title": srv['display_name'],
