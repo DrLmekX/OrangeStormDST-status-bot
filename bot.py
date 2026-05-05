@@ -89,7 +89,7 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        # Zero matematyki, stała wartość rozpychająca równe bloki
+
         spacer = "\u2800" * 36
         
         description = (
