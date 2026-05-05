@@ -88,8 +88,10 @@ def build_status_payload():
                     break
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
-        extra_spaces = max(0, 16 - len(srv['password']))
-        spacer = "\u2800" * (32 + extra_spaces)
+        
+        spacer_count = 55 - len(srv['password'])
+        spacer = "\u2800" * spacer_count
+        
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
@@ -152,18 +154,18 @@ def build_instructions_payload():
             "Witaj w panelu zarządzania! Ten kanał służy do wydawania poleceń botowi.\n\n"
             "Aby opublikować ładnie sformatowaną wiadomość na oficjalnych kanałach, napisz tutaj "
             "tekst zaczynający się od odpowiedniego prefiksu:\n\n"
-            "**`!ogloszenie [treść]`** - Publikuje ogłoszenie na kanale <#1441156235708862615>\n"
+            "**`!ogloszenie [treść]`** - Publikuje ogłoszenie na kanale <#1441156235708862615> (oznacza @everyone)\n"
             "**`!changelog [treść]`** - Publikuje listę zmian na kanale <#1424139654055071815>\n\n"
             "*Przykład użycia:*\n"
             "`!ogloszenie Serwer został zaktualizowany! Zapraszamy do gry.`\n\n"
             "> **Uwaga:** Po odebraniu polecenia bot automatycznie skasuje Twoją roboczą wiadomość "
-            "z tego kanału i opublikuje jej treść we wskazanej lokalizacji."
+            "z tego kanału i opublikuje jej treść we wskazanej lokalizacji. **Należy odczekać około 1 minutę na reakcję bota.**"
         ),
         "color": 0x333333
     }
     return {"content": "", "embeds": [embed]}
 
-def build_post_payload(title, text, author_name, icon):
+def build_post_payload(title, text, author_name, icon, ping_content=""):
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M")
     embed = {
@@ -172,7 +174,7 @@ def build_post_payload(title, text, author_name, icon):
         "color": 0xDF6900,
         "footer": {"text": f"Opublikowano przez: {author_name} | {now}"}
     }
-    return {"content": "", "embeds": [embed]}
+    return {"content": ping_content, "embeds": [embed]}
 
 def delete_discord_message(channel_id, message_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
@@ -229,10 +231,10 @@ def process_admin_commands():
         author_name = msg.get("author", {}).get("global_name") or msg.get("author", {}).get("username") or "Admin"
         if low.startswith("!ogloszenie "):
             text = content[12:].strip()
-            discord_post_new(CHANNEL_ID_OGLOSZENIA, build_post_payload("NOWE OGŁOSZENIE", text, author_name, "📢"))
+            discord_post_new(CHANNEL_ID_OGLOSZENIA, build_post_payload("NOWE OGŁOSZENIE", text, author_name, "📢", "@everyone"))
         elif low.startswith("!changelog "):
             text = content[11:].strip()
-            discord_post_new(CHANNEL_ID_CHANGELOG, build_post_payload("CHANGELOG", text, author_name, "🛠️"))
+            discord_post_new(CHANNEL_ID_CHANGELOG, build_post_payload("CHANGELOG", text, author_name, "🛠️", ""))
         delete_discord_message(CHANNEL_ID_BOT_EDIT, msg["id"])
 
 if __name__ == "__main__":
