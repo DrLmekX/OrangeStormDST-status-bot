@@ -1,7 +1,7 @@
 import os
 import requests
-from bs4 import BeautifulSoup
-import re
+import gzip
+import json
 from datetime import datetime
 import pytz
 
@@ -9,7 +9,7 @@ import pytz
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Twoich serwerów (Uproszczona - bez portów i IP!)
+# Konfiguracja Twoich serwerów 
 SERVERS = [
     {
         "search_name": "OrangeStormDST | Classic",
@@ -34,78 +34,53 @@ SERVERS = [
     }
 ]
 
-def get_players_from_website(search_term):
-    """Metoda 1: 'Wykradanie' danych ze strony dstserverlist (Scraping)"""
-    # Budujemy link z wyszukiwaniem konkretnego serwera
-    url = f"https://dstserverlist.appspot.com/?name={requests.utils.quote(search_term)}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def get_servers_from_klei_cdn():
+    print("Odpalam radar... Pobieram główną bazę danych Klei z europejskiego CDN...")
+    # Dokładnie to źródło, z którego korzysta dstserverlist.appspot.com
+    url = "https://lobby-v2-cdn.klei.com/eu-central-1-steam.json.gz"
     
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = requests.get(url, timeout=15)
         if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Bot przeszukuje strukturę strony w poszukiwaniu nazwy serwera
-            for element in soup.find_all(['tr', 'div', 'li']):
-                text = element.get_text(separator=' ', strip=True)
-                if search_term in text:
-                    # Magia Regex: Szukamy formatu np. "12/24" lub "12 / 24" w pobliżu nazwy
-                    match = re.search(r'\b(\d+)\s*/\s*(\d+)\b', text)
-                    if match:
-                        return True, int(match.group(1))
+            try:
+                # Rozpakowywanie archiwum .gz, w którym Klei trzyma listę
+                decompressed_data = gzip.decompress(response.content)
+                data = json.loads(decompressed_data)
+            except Exception:
+                # Na wypadek gdyby biblioteka requests rozpakowała to automatycznie
+                data = response.json()
+                
+            servers_found = data.get("GET", [])
+            print(f"[SUKCES] Pobrane! Lista serwerów w Europie zawiera: {len(servers_found)} pozycji.")
+            return servers_found
+        else:
+            print(f"[BŁĄD CDN] Serwer Klei zwróciło błąd: {response.status_code}")
+            return []
     except Exception as e:
-        print(f"[SCRAPER BŁĄD] Nie udało się przefiltrować strony dla {search_term}: {e}")
-    
-    return False, 0
-
-def get_players_from_klei_eu(search_term):
-    """Metoda 2: Zapasowe uderzenie w nowe API Klei dla Europy"""
-    url = "https://lobby-v2-eu.klei.com/lobby/read"
-    payload = {
-        "__gameId": "DontStarveTogether",
-        "__token": "dev",
-        "query": {"text": search_term}
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=8)
-        if response.status_code == 200:
-            data = response.json()
-            for srv in data.get("GET", []):
-                if search_term in srv.get("name", ""):
-                    return True, srv.get("connected", 0)
-    except Exception as e:
-        print(f"[API BŁĄD] Klei EU odrzuciło zapytanie: {e}")
-    return False, 0
-
-def get_server_status(search_term):
-    print(f"\n--- Sprawdzam: {search_term} ---")
-    
-    # 1. Próba scrapowania (Twój pomysł)
-    print("[1/2] Przeszukuję dstserverlist.appspot.com...")
-    is_online, players = get_players_from_website(search_term)
-    if is_online:
-        print(f"[SUKCES] Wyciągnięto ze strony! Graczy: {players}")
-        return True, players
-        
-    # 2. Awaryjne API (jeśli strona by padła)
-    print("[2/2] Scraper nie znalazł danych. Odpalam połączenie z oficjalnym serwerem Klei EU...")
-    is_online, players = get_players_from_klei_eu(search_term)
-    if is_online:
-        print(f"[SUKCES] Znaleziono w bazie Klei API! Graczy: {players}")
-        return True, players
-        
-    print("[BŁĄD] Serwer niewidoczny ani na stronie, ani w nowym API.")
-    return False, 0
+        print(f"[BŁĄD KRYTYCZNY] Nie udało się pobrać danych: {e}")
+        return []
 
 def build_message():
+    # Pobieramy ogromną listę z Europy tylko raz
+    live_servers = get_servers_from_klei_cdn()
     message_lines = []
-    print("\nOdpalam radary...")
-    for srv in SERVERS:
-        is_online, players = get_server_status(srv["search_name"])
 
-        status_text = "Online" if is_online else "Offline"
-        current_players = players if is_online else 0
-        player_text = f"{current_players}/{srv['hard_max_players']}"
+    for srv in SERVERS:
+        match = None
+        for live in live_servers:
+            # Szukamy "OrangeStormDST | Classic" w nazwach zrzuconych z serwera Klei
+            if srv["search_name"] in live.get("name", ""):
+                match = live
+                break
+
+        if match:
+            status_text = "Online"
+            players = match.get("connected", 0)
+        else:
+            status_text = "Offline"
+            players = 0
+
+        player_text = f"{players}/{srv['hard_max_players']}"
 
         block = (
             f"> ### **{srv['display_name']}**\n"
@@ -117,11 +92,11 @@ def build_message():
         )
         message_lines.append(block)
 
+    # Czas polski do stopki
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
     message_lines.append(f"\n*(Ostatnia aktualizacja: {now})*")
 
-    print("\nSprawdzanie zakończone. Buduję wiadomość...")
     return "\n\n".join(message_lines)
 
 def update_discord_message(content):
@@ -135,7 +110,7 @@ def update_discord_message(content):
     response = requests.get(url_get, headers=headers)
     
     if response.status_code != 200:
-        print(f"[BŁĄD DISCORDA] {response.text}")
+        print(f"[BŁĄD DISCORDA] Nie udało się pobrać historii: {response.status_code} - {response.text}")
         return
 
     messages = response.json()
@@ -150,12 +125,14 @@ def update_discord_message(content):
 
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{bot_message_id}"
-        requests.patch(url_patch, headers=headers, json=payload)
-        print("[SUKCES] Zaktualizowano na Discordzie.")
+        resp = requests.patch(url_patch, headers=headers, json=payload)
+        if resp.status_code == 200:
+            print("[SUKCES] Wiadomość na Discordzie zaktualizowana.")
     else:
         url_post = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        requests.post(url_post, headers=headers, json=payload)
-        print("[SUKCES] Wysłano nową wiadomość na Discord.")
+        resp = requests.post(url_post, headers=headers, json=payload)
+        if resp.status_code == 200:
+            print("[SUKCES] Nowa wiadomość wysłana na Discorda.")
 
 if __name__ == "__main__":
     new_content = build_message()
