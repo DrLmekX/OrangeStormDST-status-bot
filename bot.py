@@ -89,17 +89,16 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        # Wyrównanie hasła do 15 znaków spacją. Zapewnia identyczną szerokość pikselową bloku ``
-        padded_password = srv['password'].ljust(15, ' ')
-        
-        # Stała liczba znaków \u2800 wymuszająca sztywną szerokość we wszystkich blokach
-        spacer = "\u2800" * 45
+        # Poprawka: Stała liczba niewidzialnych znaków (38) dla każdego bloku.
+        # Rezygnujemy z odejmowania długości hasła, aby uniknąć błędów
+        # wynikających z proporcjonalnej szerokości znaków w Discordzie.
+        spacer = "\u2800" * 38
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
-            f"Hasło: `{padded_password}`{spacer}"
+            f"Hasło: `{srv['password']}`{spacer}"
         )
         embed = {
             "title": srv['display_name'],
