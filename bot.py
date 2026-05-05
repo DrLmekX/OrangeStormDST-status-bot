@@ -8,7 +8,7 @@ import pytz
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Twoich serwerów - DANE Z PLAYIT.GG
+# Konfiguracja Twoich serwerów
 SERVERS = [
     {
         "name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
@@ -36,22 +36,24 @@ SERVERS = [
     }
 ]
 
-def get_server_status(ip, port):
+def get_server_status(name, ip, port):
     try:
-        # Pytamy przez tunel Playit.gg
+        print(f"--- Pytam serwer: {name} ({ip}:{port}) ---")
         address = (ip, port)
         info = a2s.info(address, timeout=4.0)
+        print(f"[SUKCES] Odpowiedź poprawna! Graczy: {info.player_count}/{info.max_players}")
         return True, info.player_count
-    except Exception:
+    except Exception as e:
+        print(f"[BŁĄD] Nie można połączyć z {ip}:{port}. Rodzaj błędu: {type(e).__name__} -> {e}")
         return False, 0
 
 def build_message():
     message_lines = []
+    print("\nRozpoczynam sprawdzanie wszystkich serwerów...")
     for srv in SERVERS:
-        is_online, players = get_server_status(srv["ip"], srv["port"])
+        is_online, players = get_server_status(srv["name"], srv["ip"], srv["port"])
 
         status_text = "Online" if is_online else "Offline"
-        
         current_players = players if is_online else 0
         player_text = f"{current_players}/{srv['hard_max_players']}"
 
@@ -65,11 +67,11 @@ def build_message():
         )
         message_lines.append(block)
 
-    # Czas polski do stopki
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
     message_lines.append(f"\n*(Ostatnia aktualizacja: {now})*")
-
+    
+    print("Sprawdzanie zakończone. Buduję wiadomość...")
     return "\n\n".join(message_lines)
 
 def update_discord_message(content):
@@ -78,11 +80,12 @@ def update_discord_message(content):
         "Content-Type": "application/json"
     }
 
+    print("\nŁączę się z Discordem...")
     url_get = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     response = requests.get(url_get, headers=headers)
     
     if response.status_code != 200:
-        print(f"Błąd Discorda: {response.status_code} - {response.text}")
+        print(f"[BŁĄD DISCORDA] Nie udało się pobrać historii: {response.status_code} - {response.text}")
         return
 
     messages = response.json()
@@ -97,12 +100,18 @@ def update_discord_message(content):
 
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{bot_message_id}"
-        requests.patch(url_patch, headers=headers, json=payload)
-        print("Wiadomość zaktualizowana.")
+        resp = requests.patch(url_patch, headers=headers, json=payload)
+        if resp.status_code == 200:
+            print("[SUKCES] Wiadomość na Discordzie zaktualizowana.")
+        else:
+            print(f"[BŁĄD DISCORDA] Edycja nie powiodła się: {resp.text}")
     else:
         url_post = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
-        requests.post(url_post, headers=headers, json=payload)
-        print("Nowa wiadomość wysłana.")
+        resp = requests.post(url_post, headers=headers, json=payload)
+        if resp.status_code == 200:
+            print("[SUKCES] Nowa wiadomość wysłana na Discorda.")
+        else:
+            print(f"[BŁĄD DISCORDA] Wysyłanie nowej wiadomości nie powiodło się: {resp.text}")
 
 if __name__ == "__main__":
     new_content = build_message()
