@@ -1,5 +1,7 @@
 import os
 import requests
+from bs4 import BeautifulSoup
+import re
 from datetime import datetime
 import pytz
 
@@ -10,7 +12,7 @@ CHANNEL_ID = os.environ.get('CHANNEL_ID')
 # Konfiguracja Twoich serwerów (Uproszczona - bez portów i IP!)
 SERVERS = [
     {
-        "search_name": "OrangeStormDST | Classic", # Kawałek nazwy do wyszukania w bazie
+        "search_name": "OrangeStormDST | Classic",
         "display_name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
         "type": "Classic",
         "password": "OrangeStorm2101",
@@ -32,52 +34,78 @@ SERVERS = [
     }
 ]
 
-def get_klei_servers():
-    print("Odpalam radar... Szukam serwerów OrangeStormDST w oficjalnej bazie Klei...")
-    url = "https://lobby-v2-dst.klei.com/lobby/read"
+def get_players_from_website(search_term):
+    """Metoda 1: 'Wykradanie' danych ze strony dstserverlist (Scraping)"""
+    # Budujemy link z wyszukiwaniem konkretnego serwera
+    url = f"https://dstserverlist.appspot.com/?name={requests.utils.quote(search_term)}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Bot przeszukuje strukturę strony w poszukiwaniu nazwy serwera
+            for element in soup.find_all(['tr', 'div', 'li']):
+                text = element.get_text(separator=' ', strip=True)
+                if search_term in text:
+                    # Magia Regex: Szukamy formatu np. "12/24" lub "12 / 24" w pobliżu nazwy
+                    match = re.search(r'\b(\d+)\s*/\s*(\d+)\b', text)
+                    if match:
+                        return True, int(match.group(1))
+    except Exception as e:
+        print(f"[SCRAPER BŁĄD] Nie udało się przefiltrować strony dla {search_term}: {e}")
+    
+    return False, 0
+
+def get_players_from_klei_eu(search_term):
+    """Metoda 2: Zapasowe uderzenie w nowe API Klei dla Europy"""
+    url = "https://lobby-v2-eu.klei.com/lobby/read"
     payload = {
         "__gameId": "DontStarveTogether",
         "__token": "dev",
-        "query": {
-            "text": "OrangeStormDST"
-        }
+        "query": {"text": search_term}
     }
-    
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=8)
         if response.status_code == 200:
             data = response.json()
-            servers_found = data.get("GET", [])
-            print(f"[SUKCES] Baza Klei odpowiedziała. Znaleziono {len(servers_found)} pasujących serwerów w internecie.")
-            return servers_found
-        else:
-            print(f"[BŁĄD] Odpowiedź serwerów Klei: {response.status_code}")
-            return []
+            for srv in data.get("GET", []):
+                if search_term in srv.get("name", ""):
+                    return True, srv.get("connected", 0)
     except Exception as e:
-        print(f"[BŁĄD KRYTYCZNY] Nie można połączyć się z Klei: {e}")
-        return []
+        print(f"[API BŁĄD] Klei EU odrzuciło zapytanie: {e}")
+    return False, 0
+
+def get_server_status(search_term):
+    print(f"\n--- Sprawdzam: {search_term} ---")
+    
+    # 1. Próba scrapowania (Twój pomysł)
+    print("[1/2] Przeszukuję dstserverlist.appspot.com...")
+    is_online, players = get_players_from_website(search_term)
+    if is_online:
+        print(f"[SUKCES] Wyciągnięto ze strony! Graczy: {players}")
+        return True, players
+        
+    # 2. Awaryjne API (jeśli strona by padła)
+    print("[2/2] Scraper nie znalazł danych. Odpalam połączenie z oficjalnym serwerem Klei EU...")
+    is_online, players = get_players_from_klei_eu(search_term)
+    if is_online:
+        print(f"[SUKCES] Znaleziono w bazie Klei API! Graczy: {players}")
+        return True, players
+        
+    print("[BŁĄD] Serwer niewidoczny ani na stronie, ani w nowym API.")
+    return False, 0
 
 def build_message():
-    # Pobieramy dane z bazy tylko raz dla wszystkich serwerów
-    live_servers = get_klei_servers()
     message_lines = []
-
+    print("\nOdpalam radary...")
     for srv in SERVERS:
-        # Szukamy naszego serwera na liście pobranej od Klei
-        match = None
-        for live in live_servers:
-            if srv["search_name"] in live.get("name", ""):
-                match = live
-                break
+        is_online, players = get_server_status(srv["search_name"])
 
-        if match:
-            status_text = "Online"
-            players = match.get("connected", 0)
-        else:
-            status_text = "Offline"
-            players = 0
-
-        player_text = f"{players}/{srv['hard_max_players']}"
+        status_text = "Online" if is_online else "Offline"
+        current_players = players if is_online else 0
+        player_text = f"{current_players}/{srv['hard_max_players']}"
 
         block = (
             f"> ### **{srv['display_name']}**\n"
@@ -89,11 +117,11 @@ def build_message():
         )
         message_lines.append(block)
 
-    # Czas polski do stopki
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
     message_lines.append(f"\n*(Ostatnia aktualizacja: {now})*")
 
+    print("\nSprawdzanie zakończone. Buduję wiadomość...")
     return "\n\n".join(message_lines)
 
 def update_discord_message(content):
