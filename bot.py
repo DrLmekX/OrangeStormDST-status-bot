@@ -3,12 +3,14 @@ import requests
 import a2s
 from datetime import datetime
 import pytz
+import socket
+import time
 
 # Pobieranie tajnych danych z GitHub Secrets
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Twoich serwerów
+# Konfiguracja Twoich serwerów - DANE Z PLAYIT.GG
 SERVERS = [
     {
         "name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
@@ -36,16 +38,36 @@ SERVERS = [
     }
 ]
 
-def get_server_status(name, ip, port):
+def get_server_status(name, domain, port):
+    print(f"--- Pytam serwer: {name} ({domain}:{port}) ---")
+    
+    # OSTATECZNY FIX 1: Wymuszenie twardego IPv4 
     try:
-        print(f"--- Pytam serwer: {name} ({ip}:{port}) ---")
-        address = (ip, port)
-        info = a2s.info(address, timeout=4.0)
-        print(f"[SUKCES] Odpowiedź poprawna! Graczy: {info.player_count}/{info.max_players}")
-        return True, info.player_count
+        ip_v4 = socket.gethostbyname(domain)
+        print(f"[DNS] Rozwiązano domenę na czyste IPv4: {ip_v4}")
     except Exception as e:
-        print(f"[BŁĄD] Nie można połączyć z {ip}:{port}. Rodzaj błędu: {type(e).__name__} -> {e}")
+        print(f"[BŁĄD DNS] Nie można rozwiązać domeny: {e}")
         return False, 0
+
+    address = (ip_v4, int(port))
+    
+    # OSTATECZNY FIX 2: Agresywne uderzenia (3 próby dla UDP)
+    for attempt in range(1, 4):
+        try:
+            print(f"  -> Próba {attempt}/3...")
+            # Pytamy przez wymuszone IPv4 z wydłużonym czasem nasłuchu
+            info = a2s.info(address, timeout=4.0)
+            print(f"[SUKCES] Odpowiedź poprawna! Graczy: {info.player_count}/{info.max_players}")
+            return True, info.player_count
+        except TimeoutError:
+            print(f"  [X] Próba {attempt} - Timeout (Zgubiony pakiet).")
+            time.sleep(1.5) # Czekamy chwilę przed kolejnym atakiem
+        except Exception as e:
+            print(f"  [X] Próba {attempt} - Błąd: {type(e).__name__} -> {e}")
+            time.sleep(1.5)
+            
+    print(f"[BŁĄD KRYTYCZNY] Serwer nie odpowiedział pomimo 3 prób.")
+    return False, 0
 
 def build_message():
     message_lines = []
