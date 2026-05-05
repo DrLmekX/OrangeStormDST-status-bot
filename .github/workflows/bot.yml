@@ -2,25 +2,25 @@ name: Aktualizacja Statusu DST
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Odpalaj co 5 minut
-  workflow_dispatch: # Przycisk do ręcznego odpalania
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Pobieranie repozytorium
-        uses: actions/checkout@v3
+      - name: Pobieranie repo
+        uses: actions/checkout@v4
 
-      - name: Konfiguracja Pythona
-        uses: actions/setup-python@v4
+      - name: Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalacja bibliotek
+      - name: Biblioteki
         run: pip install -r requirements.txt
 
-      - name: Uruchomienie bota
+      - name: Start bota
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
