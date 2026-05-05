@@ -11,21 +11,21 @@ CHANNEL_ID = os.environ.get('CHANNEL_ID')
 SERVERS = [
     {
         "search_name": "OrangeStormDST | Classic",
-        "display_name": "OrangeStormDST | Classic",
+        "display_name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
         "type": "Classic",
         "password": "OrangeStorm2101",
         "hard_max_players": 24
     },
     {
         "search_name": "OrangeStormDST | Shipwrecked",
-        "display_name": "OrangeStormDST | Shipwrecked",
+        "display_name": "[PL] OrangeStormDST | Shipwrecked | Najlepszy Polski Serwer!",
         "type": "Shipwrecked",
         "password": "OrangeStorm777",
         "hard_max_players": 12
     },
     {
         "search_name": "OrangeStormDST | Forge",
-        "display_name": "OrangeStormDST | Forge",
+        "display_name": "[PL] OrangeStormDST | Forge | Najlepszy Polski Serwer!",
         "type": "The Forge",
         "password": "OrangeStorm2026",
         "hard_max_players": 6
@@ -76,9 +76,9 @@ def get_servers_from_klei_cdn():
 def build_payload():
     global_cdn_servers = get_servers_from_klei_cdn()
     embeds = []
-    spacer = "\u2800" * 35
+    spacer = "\u2800" * 32
 
-    for srv in SERVERS:
+    for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
         is_online, players = False, 0
 
@@ -96,8 +96,7 @@ def build_payload():
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
-            f"Hasło: `{srv['password']}`\n"
-            f"{spacer}"
+            f"Hasło: `{srv['password']}`{spacer}"
         )
 
         embed = {
@@ -105,17 +104,17 @@ def build_payload():
             "description": description,
             "color": 0xDF6900
         }
+
+        if idx == len(SERVERS) - 1:
+            tz = pytz.timezone('Europe/Warsaw')
+            now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
+            embed["footer"] = {
+                "text": f"Ostatnia synchronizacja bazy: {now}"
+            }
+
         embeds.append(embed)
     
-    tz = pytz.timezone('Europe/Warsaw')
-    now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
-    
-    payload = {
-        "content": f"**Ostatnia synchronizacja bazy:** `{now}`",
-        "embeds": embeds
-    }
-    
-    return payload
+    return {"content": "", "embeds": embeds}
 
 def update_discord_message(payload):
     headers = {
