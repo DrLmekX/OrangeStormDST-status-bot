@@ -7,7 +7,7 @@ import pytz
 import time
 
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
-CHANNEL_ID_STATUS = "1429513092538044528"
+CHANNEL_ID_STATUS = os.environ.get('CHANNEL_ID')
 CHANNEL_ID_RULES = "1423988013813207164"
 CHANNEL_ID_OGLOSZENIA = "1441156235708862615"
 CHANNEL_ID_CHANGELOG = "1424139654055071815"
@@ -89,20 +89,18 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
+        spacer_count = max(0, 65 - len(srv['password']))
+        spacer = "\u2800" * spacer_count
+        
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
-            f"Hasło: `{srv['password']}`"
+            f"Hasło:\u00A0`{srv['password']}`{spacer}"
         )
         
-        base_title = srv['display_name']
-        target_len = 85
-        padding_count = max(0, target_len - len(base_title))
-        padded_title = base_title + "\u00A0" + ("\u2800" * padding_count)
-        
         embed = {
-            "title": padded_title,
+            "title": srv['display_name'],
             "description": description,
             "color": 0xDF6900
         }
