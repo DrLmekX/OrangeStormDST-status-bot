@@ -25,7 +25,7 @@ SERVERS = [
         "search_name": "OrangeStormDST | Shipwrecked",
         "display_name": "[PL] OrangeStormDST | Shipwrecked | Najlepszy Polski Serwer!",
         "type": "Shipwrecked",
-        "password": "OrangeStorm777",
+        "password": "OrangeStorm7777",
         "hard_max_players": 12
     },
     {
@@ -89,10 +89,8 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        # Poprawka: Stała liczba niewidzialnych znaków (38) dla każdego bloku.
-        # Rezygnujemy z odejmowania długości hasła, aby uniknąć błędów
-        # wynikających z proporcjonalnej szerokości znaków w Discordzie.
-        spacer = "\u2800" * 38
+        # Zero matematyki, stała wartość rozpychająca równe bloki
+        spacer = "\u2800" * 36
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
