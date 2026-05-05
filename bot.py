@@ -89,7 +89,10 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        spacer_count = 55 - len(srv['password'])
+        # Poprawka: Odjęcie 9 stałych znaków z linijki (słowo "Hasło: " i dwa backticki)
+        base_width = 55
+        static_chars_len = 9
+        spacer_count = max(0, base_width - static_chars_len - len(srv['password']))
         spacer = "\u2800" * spacer_count
         
         description = (
