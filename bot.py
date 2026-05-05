@@ -44,6 +44,27 @@ BROWSER_HEADERS = {
     'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
+def discord_api_request(method, url, headers, json_data=None):
+    for _ in range(5):
+        if method == "GET":
+            response = requests.get(url, headers=headers)
+        elif method == "POST":
+            response = requests.post(url, headers=headers, json=json_data)
+        elif method == "PATCH":
+            response = requests.patch(url, headers=headers, json=json_data)
+        elif method == "DELETE":
+            response = requests.delete(url, headers=headers)
+        
+        if response.status_code == 429:
+            try:
+                retry_after = float(response.json().get('retry_after', 1))
+            except:
+                retry_after = 1.0
+            time.sleep(retry_after + 0.1)
+        else:
+            return response
+    return response
+
 def get_servers_from_klei_cdn():
     regions = ['eu-central-1', 'us-east-1', 'ap-southeast-1', 'us-west-1']
     platforms = ['Steam', 'steam']
@@ -174,7 +195,7 @@ def build_instructions_payload():
             "*Przykład użycia:*\n"
             "`!ogloszenie Serwer został zaktualizowany! Zapraszamy do gry.`\n\n"
             "> **Uwaga:** Po odebraniu polecenia bot automatycznie skasuje Twoją roboczą wiadomość "
-            "z tego kanału i opublikuje jej treść we wskazanej lokalizacji."
+            "z tego kanału i natychmiast opublikuje jej treść we wskazanej lokalizacji."
         ),
         "color": 0x333333
     }
@@ -197,15 +218,14 @@ def build_post_payload(title, text, author_name, icon):
 def delete_discord_message(channel_id, message_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}"
-    requests.delete(url, headers=headers)
-    time.sleep(0.5)
+    discord_api_request("DELETE", url, headers)
 
 def clean_channel(channel_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    response = requests.get(url, headers=headers)
+    response = discord_api_request("GET", url, headers)
     
-    if response.status_code == 200:
+    if response and response.status_code == 200:
         for msg in response.json():
             if not msg.get("author", {}).get("bot"):
                 delete_discord_message(channel_id, msg["id"])
@@ -216,8 +236,7 @@ def discord_post_new(channel_id, payload):
         "Content-Type": "application/json"
     }
     url_post = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    requests.post(url_post, headers=headers, json=payload)
-    time.sleep(0.5)
+    discord_api_request("POST", url_post, headers, json_data=payload)
 
 def update_discord_message(channel_id, payload):
     headers = {
@@ -226,9 +245,9 @@ def update_discord_message(channel_id, payload):
     }
 
     url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    response = requests.get(url_get, headers=headers)
+    response = discord_api_request("GET", url_get, headers)
     
-    if response.status_code != 200:
+    if not response or response.status_code != 200:
         return
 
     messages = response.json()
@@ -241,18 +260,17 @@ def update_discord_message(channel_id, payload):
 
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{channel_id}/messages/{bot_message_id}"
-        requests.patch(url_patch, headers=headers, json=payload)
+        discord_api_request("PATCH", url_patch, headers, json_data=payload)
     else:
         url_post = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        requests.post(url_post, headers=headers, json=payload)
-    time.sleep(0.5)
+        discord_api_request("POST", url_post, headers, json_data=payload)
 
 def process_admin_commands():
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID_BOT_EDIT}/messages"
-    response = requests.get(url, headers=headers)
+    response = discord_api_request("GET", url, headers)
     
-    if response.status_code != 200:
+    if not response or response.status_code != 200:
         return
 
     for msg in response.json():
@@ -263,13 +281,17 @@ def process_admin_commands():
         content_lower = content.lower()
         author_name = msg.get("author", {}).get("global_name") or msg.get("author", {}).get("username") or "Admin"
         
-        if content_lower.startswith("!ogloszenie "):
-            text = content[12:].strip()
+        if content_lower.startswith("!ogloszenie"):
+            text = content[11:].strip()
+            if not text:
+                text = "Brak treści."
             payload = build_post_payload("NOWE OGŁOSZENIE", text, author_name, "📢")
             discord_post_new(CHANNEL_ID_OGLOSZENIA, payload)
             
-        elif content_lower.startswith("!changelog "):
-            text = content[11:].strip()
+        elif content_lower.startswith("!changelog"):
+            text = content[10:].strip()
+            if not text:
+                text = "Brak treści."
             payload = build_post_payload("CHANGELOG", text, author_name, "🛠️")
             discord_post_new(CHANNEL_ID_CHANGELOG, payload)
         
