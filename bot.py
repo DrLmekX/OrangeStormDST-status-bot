@@ -5,30 +5,35 @@ import json
 from datetime import datetime
 import pytz
 
+# Pobieranie tajnych danych z GitHuba
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
+# Konfiguracja Serwerów
 SERVERS = [
     {
         "search_name": "OrangeStormDST | Classic",
-        "display_name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
+        "display_name": "🏕️ [PL] OrangeStormDST | Classic",
         "type": "Classic",
         "password": "OrangeStorm2101",
-        "hard_max_players": 24
+        "hard_max_players": 24,
+        "show_days": True
     },
     {
         "search_name": "OrangeStormDST | Shipwrecked",
-        "display_name": "[PL] OrangeStormDST | Shipwrecked | Najlepszy Polski Serwer!",
+        "display_name": "🏝️ [PL] OrangeStormDST | Shipwrecked",
         "type": "Shipwrecked",
         "password": "OrangeStorm777",
-        "hard_max_players": 12
+        "hard_max_players": 12,
+        "show_days": True
     },
     {
         "search_name": "OrangeStormDST | Forge",
-        "display_name": "[PL] OrangeStormDST | Forge | Najlepszy Polski Serwer!",
+        "display_name": "⚔️ [PL] OrangeStormDST | Forge",
         "type": "The Forge",
         "password": "OrangeStorm2026",
-        "hard_max_players": 6
+        "hard_max_players": 6,
+        "show_days": False
     }
 ]
 
@@ -73,49 +78,76 @@ def get_servers_from_klei_cdn():
                 
     return live_servers
 
-def build_message():
+def build_embed():
     global_cdn_servers = get_servers_from_klei_cdn()
-    message_lines = []
+    fields = []
 
     for srv in SERVERS:
         search_name = srv["search_name"]
-        is_online, players = False, 0
+        is_online, players, current_day = False, 0, "?"
 
+        # Wyciąganie danych prosto z CDN
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
-                    is_online, players = True, live.get("connected", 0)
+                    is_online = True
+                    players = live.get("connected", 0)
+                    current_day = live.get("day", "?")
                     break
 
+        # Przygotowanie wizualnych wskaźników
+        status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
-        player_text = f"{players}/{srv['hard_max_players']}"
+        
+        # Budowa eleganckich linijek danych
+        value_lines = [
+            f"**Status:** {status_icon} `{status_text}`",
+            f"**Typ:** `{srv['type']}`",
+            f"**Gracze:** `{players} / {srv['hard_max_players']}`"
+        ]
+        
+        # Dodawanie dni tylko dla określonych serwerów
+        if srv["show_days"]:
+            display_day = current_day if is_online else "-"
+            value_lines.append(f"**Dzień:** `{display_day}`")
+            
+        value_lines.append(f"**Hasło:** `{srv['password']}`")
 
-        block = (
-            f"> ### **{srv['display_name']}**\n"
-            f"> **Status:** `{status_text}`\n"
-            f"> **Typ rozgrywki:** {srv['type']}\n"
-            f"> **Gracze:** {player_text}\n"
-            f"> **Hasło:** `{srv['password']}`\n"
-            f"> ──────────────────────────────────────────────"
-        )
-        message_lines.append(block)
+        # Pojedynczy blok serwera dołączany do Embedu
+        fields.append({
+            "name": f" {srv['display_name']} ",
+            "value": "\n".join(value_lines) + "\n\u200b", # Pusty znak \u200b robi ładny odstęp między serwerami
+            "inline": False
+        })
 
+    # Czas i Data
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
-    message_lines.append(f"\n*(Ostatnia aktualizacja: {now})*")
 
-    return "\n\n".join(message_lines)
+    # Tworzenie całego szkieletu Embed
+    embed = {
+        "title": "📊  Status Serwerów OrangeStormDST",
+        "color": 16753920, # Kod koloru pomarańczowego
+        "fields": fields,
+        "footer": {
+            "text": f"Aktualizacja zsynchronizowana: {now}"
+        }
+    }
+    
+    return embed
 
-def update_discord_message(content):
+def update_discord_message(embed_data):
     headers = {
         "Authorization": f"Bot {DISCORD_TOKEN}",
         "Content-Type": "application/json"
     }
 
+    # Pobieranie historii kanału
     url_get = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages"
     response = requests.get(url_get, headers=headers)
     
     if response.status_code != 200:
+        print(f"[BŁĄD] Nie można pobrać historii kanału: {response.text}")
         return
 
     messages = response.json()
@@ -126,7 +158,11 @@ def update_discord_message(content):
             bot_message_id = msg["id"]
             break
 
-    payload = {"content": content}
+    # Czysty ładunek z wyzerowaniem "content", żeby skasować stary, brzydki tekst
+    payload = {
+        "content": "", 
+        "embeds": [embed_data]
+    }
 
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{bot_message_id}"
@@ -136,5 +172,5 @@ def update_discord_message(content):
         requests.post(url_post, headers=headers, json=payload)
 
 if __name__ == "__main__":
-    new_content = build_message()
-    update_discord_message(new_content)
+    new_embed = build_embed()
+    update_discord_message(new_embed)
