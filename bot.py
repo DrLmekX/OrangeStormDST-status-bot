@@ -44,32 +44,10 @@ BROWSER_HEADERS = {
     'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
 }
 
-def discord_api_request(method, url, headers, json_data=None):
-    for _ in range(5):
-        if method == "GET":
-            response = requests.get(url, headers=headers)
-        elif method == "POST":
-            response = requests.post(url, headers=headers, json=json_data)
-        elif method == "PATCH":
-            response = requests.patch(url, headers=headers, json=json_data)
-        elif method == "DELETE":
-            response = requests.delete(url, headers=headers)
-        
-        if response.status_code == 429:
-            try:
-                retry_after = float(response.json().get('retry_after', 1))
-            except:
-                retry_after = 1.0
-            time.sleep(retry_after + 0.1)
-        else:
-            return response
-    return response
-
 def get_servers_from_klei_cdn():
     regions = ['eu-central-1', 'us-east-1', 'ap-southeast-1', 'us-west-1']
     platforms = ['Steam', 'steam']
     live_servers = []
-    
     for region in regions:
         for platform in platforms:
             url = f"https://lobby-v2-cdn.klei.com/{region}-{platform}.json.gz"
@@ -81,7 +59,6 @@ def get_servers_from_klei_cdn():
                         data = json.loads(dec)
                     except Exception:
                         data = response.json()
-                    
                     servers = []
                     if isinstance(data, dict):
                         for k, v in data.items():
@@ -90,58 +67,45 @@ def get_servers_from_klei_cdn():
                                 break
                     elif isinstance(data, list):
                         servers = data
-                        
                     if servers:
                         live_servers.extend(servers)
                         break
             except Exception:
                 pass
-                
     return live_servers
 
 def build_status_payload():
     global_cdn_servers = get_servers_from_klei_cdn()
     embeds = []
-
     for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
         is_online, players = False, 0
-
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
                     break
-
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
-        
         extra_spaces = max(0, 16 - len(srv['password']))
         spacer = "\u2800" * (32 + extra_spaces)
-        
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
             f"Hasło: `{srv['password']}`{spacer}"
         )
-
         embed = {
             "title": srv['display_name'],
             "description": description,
             "color": 0xDF6900
         }
-
         if idx == len(SERVERS) - 1:
             tz = pytz.timezone('Europe/Warsaw')
             now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
-            embed["footer"] = {
-                "text": f"Ostatnia synchronizacja bazy: {now}"
-            }
-
+            embed["footer"] = {"text": f"Ostatnia synchronizacja bazy: {now}"}
         embeds.append(embed)
-    
     return {"content": "", "embeds": embeds}
 
 def build_rules_payload():
@@ -174,13 +138,11 @@ def build_rules_payload():
         "> **Szczegóły:** Nie wymagamy obecności 24/7, jednak fajnie, jeśli od czasu do czasu dasz znać, że żyjesz i dołączysz do wspólnej zabawy.\n\n"
         "**Podsumowując:** Stawiamy na luźny klimat, dobrą zabawę i trochę kontrolowanego chaosu - w końcu to **OrangeStormDST**!"
     )
-    
     embed = {
         "title": "━━ REGULAMIN SERWERA ORANGE STORM DST ━━",
         "description": description,
         "color": 0xDF6900
     }
-    
     return {"content": "", "embeds": [embed]}
 
 def build_instructions_payload():
@@ -195,7 +157,7 @@ def build_instructions_payload():
             "*Przykład użycia:*\n"
             "`!ogloszenie Serwer został zaktualizowany! Zapraszamy do gry.`\n\n"
             "> **Uwaga:** Po odebraniu polecenia bot automatycznie skasuje Twoją roboczą wiadomość "
-            "z tego kanału i natychmiast opublikuje jej treść we wskazanej lokalizacji."
+            "z tego kanału i opublikuje jej treść we wskazanej lokalizacji."
         ),
         "color": 0x333333
     }
@@ -204,111 +166,80 @@ def build_instructions_payload():
 def build_post_payload(title, text, author_name, icon):
     tz = pytz.timezone('Europe/Warsaw')
     now = datetime.now(tz).strftime("%d.%m.%Y %H:%M")
-    
     embed = {
         "title": f"{icon} {title}",
         "description": text,
         "color": 0xDF6900,
-        "footer": {
-            "text": f"Opublikowane przez: {author_name} | {now}"
-        }
+        "footer": {"text": f"Opublikowano przez: {author_name} | {now}"}
     }
     return {"content": "", "embeds": [embed]}
 
 def delete_discord_message(channel_id, message_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}"
-    discord_api_request("DELETE", url, headers)
+    requests.delete(url, headers=headers)
+    time.sleep(1)
 
 def clean_channel(channel_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    response = discord_api_request("GET", url, headers)
-    
-    if response and response.status_code == 200:
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
         for msg in response.json():
             if not msg.get("author", {}).get("bot"):
                 delete_discord_message(channel_id, msg["id"])
 
 def discord_post_new(channel_id, payload):
-    headers = {
-        "Authorization": f"Bot {DISCORD_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
     url_post = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    discord_api_request("POST", url_post, headers, json_data=payload)
+    requests.post(url_post, headers=headers, json=payload)
+    time.sleep(1)
 
 def update_discord_message(channel_id, payload):
-    headers = {
-        "Authorization": f"Bot {DISCORD_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
     url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    response = discord_api_request("GET", url_get, headers)
-    
-    if not response or response.status_code != 200:
+    response = requests.get(url_get, headers=headers)
+    if response.status_code != 200:
         return
-
     messages = response.json()
     bot_message_id = None
-
     for msg in messages:
         if msg.get("author", {}).get("bot") is True:
             bot_message_id = msg["id"]
             break
-
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{channel_id}/messages/{bot_message_id}"
-        discord_api_request("PATCH", url_patch, headers, json_data=payload)
+        requests.patch(url_patch, headers=headers, json=payload)
     else:
         url_post = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-        discord_api_request("POST", url_post, headers, json_data=payload)
+        requests.post(url_post, headers=headers, json=payload)
+    time.sleep(1)
 
 def process_admin_commands():
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url = f"https://discord.com/api/v10/channels/{CHANNEL_ID_BOT_EDIT}/messages"
-    response = discord_api_request("GET", url, headers)
-    
-    if not response or response.status_code != 200:
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
         return
-
     for msg in response.json():
         if msg.get("author", {}).get("bot"):
             continue
-
         content = msg.get("content", "").strip()
-        content_lower = content.lower()
+        low = content.lower()
         author_name = msg.get("author", {}).get("global_name") or msg.get("author", {}).get("username") or "Admin"
-        
-        if content_lower.startswith("!ogloszenie"):
+        if low.startswith("!ogloszenie "):
+            text = content[12:].strip()
+            discord_post_new(CHANNEL_ID_OGLOSZENIA, build_post_payload("NOWE OGŁOSZENIE", text, author_name, "📢"))
+        elif low.startswith("!changelog "):
             text = content[11:].strip()
-            if not text:
-                text = "Brak treści."
-            payload = build_post_payload("NOWE OGŁOSZENIE", text, author_name, "📢")
-            discord_post_new(CHANNEL_ID_OGLOSZENIA, payload)
-            
-        elif content_lower.startswith("!changelog"):
-            text = content[10:].strip()
-            if not text:
-                text = "Brak treści."
-            payload = build_post_payload("CHANGELOG", text, author_name, "🛠️")
-            discord_post_new(CHANNEL_ID_CHANGELOG, payload)
-        
+            discord_post_new(CHANNEL_ID_CHANGELOG, build_post_payload("CHANGELOG", text, author_name, "🛠️"))
         delete_discord_message(CHANNEL_ID_BOT_EDIT, msg["id"])
 
 if __name__ == "__main__":
     clean_channel(CHANNEL_ID_OGLOSZENIA)
     clean_channel(CHANNEL_ID_CHANGELOG)
-    
     process_admin_commands()
-    
-    instructions_payload = build_instructions_payload()
-    update_discord_message(CHANNEL_ID_BOT_EDIT, instructions_payload)
-    
+    update_discord_message(CHANNEL_ID_BOT_EDIT, build_instructions_payload())
     if CHANNEL_ID_STATUS:
-        status_payload = build_status_payload()
-        update_discord_message(CHANNEL_ID_STATUS, status_payload)
-        
-    rules_payload = build_rules_payload()
-    update_discord_message(CHANNEL_ID_RULES, rules_payload)
+        update_discord_message(CHANNEL_ID_STATUS, build_status_payload())
+    update_discord_message(CHANNEL_ID_RULES, build_rules_payload())
