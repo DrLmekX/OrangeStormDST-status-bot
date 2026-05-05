@@ -5,11 +5,9 @@ import json
 from datetime import datetime
 import pytz
 
-# Pobieranie tajnych danych z GitHuba
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Serwerów (bez dni i z czystymi nazwami)
 SERVERS = [
     {
         "search_name": "OrangeStormDST | Classic",
@@ -45,7 +43,7 @@ def get_servers_from_klei_cdn():
     regions = ['eu-central-1', 'us-east-1', 'ap-southeast-1', 'us-west-1']
     platforms = ['Steam', 'steam']
     live_servers = []
-
+    
     for region in regions:
         for platform in platforms:
             url = f"https://lobby-v2-cdn.klei.com/{region}-{platform}.json.gz"
@@ -75,15 +73,15 @@ def get_servers_from_klei_cdn():
                 
     return live_servers
 
-def build_embeds():
+def build_payload():
     global_cdn_servers = get_servers_from_klei_cdn()
     embeds = []
+    spacer = "\u2800" * 35
 
-    for idx, srv in enumerate(SERVERS):
+    for srv in SERVERS:
         search_name = srv["search_name"]
         is_online, players = False, 0
 
-        # Wyciąganie danych z bazy Klei
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
@@ -91,7 +89,6 @@ def build_embeds():
                     players = live.get("connected", 0)
                     break
 
-        # Czysty, lekki design statusów
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
@@ -99,29 +96,28 @@ def build_embeds():
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
-            f"Hasło: `{srv['password']}`"
+            f"Hasło: `{srv['password']}`\n"
+            f"{spacer}"
         )
 
-        # Każdy serwer to teraz osobny, solidny blok (Embed)
         embed = {
             "title": srv['display_name'],
             "description": description,
-            "color": 0xDF6900 # Pomarańczowy pasek boczny dla każdego bloku
+            "color": 0xDF6900
         }
-
-        # Stopkę z czasem dodajemy tylko do OSTATNIEGO bloku na liście
-        if idx == len(SERVERS) - 1:
-            tz = pytz.timezone('Europe/Warsaw')
-            now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
-            embed["footer"] = {
-                "text": f"Ostatnia synchronizacja bazy: {now}"
-            }
-
         embeds.append(embed)
     
-    return embeds
+    tz = pytz.timezone('Europe/Warsaw')
+    now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
+    
+    payload = {
+        "content": f"**Ostatnia synchronizacja bazy:** `{now}`",
+        "embeds": embeds
+    }
+    
+    return payload
 
-def update_discord_message(embeds_list):
+def update_discord_message(payload):
     headers = {
         "Authorization": f"Bot {DISCORD_TOKEN}",
         "Content-Type": "application/json"
@@ -141,12 +137,6 @@ def update_discord_message(embeds_list):
             bot_message_id = msg["id"]
             break
 
-    # Wysyłamy teraz CAŁĄ LISTĘ osobnych bloków (maksymalnie Discord pozwala na 10)
-    payload = {
-        "content": "", 
-        "embeds": embeds_list
-    }
-
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages/{bot_message_id}"
         requests.patch(url_patch, headers=headers, json=payload)
@@ -155,5 +145,5 @@ def update_discord_message(embeds_list):
         requests.post(url_post, headers=headers, json=payload)
 
 if __name__ == "__main__":
-    new_embeds = build_embeds()
-    update_discord_message(new_embeds)
+    new_payload = build_payload()
+    update_discord_message(new_payload)
