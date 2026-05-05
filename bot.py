@@ -89,7 +89,7 @@ def build_status_payload():
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         
-        spacer_count = max(0, 65 - len(srv['password']))
+        spacer_count = 50 if idx == 1 else 51
         spacer = "\u2800" * spacer_count
         
         description = (
