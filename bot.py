@@ -9,31 +9,28 @@ import pytz
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID = os.environ.get('CHANNEL_ID')
 
-# Konfiguracja Serwerów
+# Konfiguracja Serwerów (bez dni i z czystymi nazwami)
 SERVERS = [
     {
         "search_name": "OrangeStormDST | Classic",
-        "display_name": "[PL] OrangeStormDST | Classic",
+        "display_name": "OrangeStormDST | Classic",
         "type": "Classic",
         "password": "OrangeStorm2101",
-        "hard_max_players": 24,
-        "show_days": True
+        "hard_max_players": 24
     },
     {
         "search_name": "OrangeStormDST | Shipwrecked",
-        "display_name": "[PL] OrangeStormDST | Shipwrecked",
+        "display_name": "OrangeStormDST | Shipwrecked",
         "type": "Shipwrecked",
         "password": "OrangeStorm777",
-        "hard_max_players": 12,
-        "show_days": True
+        "hard_max_players": 12
     },
     {
         "search_name": "OrangeStormDST | Forge",
-        "display_name": "[PL] OrangeStormDST | Forge",
+        "display_name": "OrangeStormDST | Forge",
         "type": "The Forge",
         "password": "OrangeStorm2026",
-        "hard_max_players": 6,
-        "show_days": False
+        "hard_max_players": 6
     }
 ]
 
@@ -78,24 +75,13 @@ def get_servers_from_klei_cdn():
                 
     return live_servers
 
-def translate_season(season_en):
-    translations = {
-        "Spring": "Wiosna",
-        "Summer": "Lato",
-        "Autumn": "Jesień",
-        "Winter": "Zima"
-    }
-    return translations.get(season_en, "Nieznany")
-
-def build_embed():
+def build_embeds():
     global_cdn_servers = get_servers_from_klei_cdn()
-    fields = []
+    embeds = []
 
-    for srv in SERVERS:
+    for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
         is_online, players = False, 0
-        current_day = "Ukryty"
-        season_pl = "Brak danych"
 
         # Wyciąganie danych z bazy Klei
         if global_cdn_servers:
@@ -103,60 +89,39 @@ def build_embed():
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
-                    
-                    # Szukanie dnia (czasami jest pod 'day', czasami głębiej)
-                    raw_day = live.get("day")
-                    if raw_day is not None:
-                        current_day = str(raw_day)
-                        
-                    # Szukanie sezonu
-                    raw_season = live.get("season", "")
-                    if raw_season:
-                        season_pl = translate_season(raw_season)
-                        
                     break
 
-        # Przygotowanie masywnych wskaźników tekstowych
-        status_text = "🟢 ONLINE" if is_online else "🔴 OFFLINE"
+        # Czysty, lekki design statusów
+        status_icon = "🟢" if is_online else "🔴"
+        status_text = "Online" if is_online else "Offline"
         
-        # Surowy i techniczny układ
-        value_lines = [
-            f"**STATUS:** {status_text}",
-            f"**TYP:** `{srv['type']}`",
-            f"**GRACZE:** `{players} / {srv['hard_max_players']}`"
-        ]
-        
-        if srv["show_days"]:
-            display_day = current_day if is_online else "-"
-            display_season = season_pl if is_online else "-"
-            value_lines.append(f"**DZIEŃ:** `{display_day}` ({display_season})")
-            
-        value_lines.append(f"**HASŁO:** `{srv['password']}`")
+        description = (
+            f"Status: {status_icon} **{status_text}**\n"
+            f"Tryb gry: {srv['type']}\n"
+            f"Gracze: {players} / {srv['hard_max_players']}\n"
+            f"Hasło: `{srv['password']}`"
+        )
 
-        # Pojedynczy blok serwera w formie panelu Embed
-        fields.append({
-            "name": f"■ {srv['display_name']}",
-            "value": "\n".join(value_lines),
-            "inline": False
-        })
-
-    # Czas i Data z polską strefą czasową
-    tz = pytz.timezone('Europe/Warsaw')
-    now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
-
-    # Tworzenie czystego, inżynieryjnego panelu Embed
-    embed = {
-        "title": "MONITOR SERWERÓW ORANGESTORM",
-        "color": 0xDF6900, # Ciężki, ciemno-pomarańczowy kolor
-        "fields": fields,
-        "footer": {
-            "text": f"Ostatnia synchronizacja bazy: {now}"
+        # Każdy serwer to teraz osobny, solidny blok (Embed)
+        embed = {
+            "title": srv['display_name'],
+            "description": description,
+            "color": 0xDF6900 # Pomarańczowy pasek boczny dla każdego bloku
         }
-    }
-    
-    return embed
 
-def update_discord_message(embed_data):
+        # Stopkę z czasem dodajemy tylko do OSTATNIEGO bloku na liście
+        if idx == len(SERVERS) - 1:
+            tz = pytz.timezone('Europe/Warsaw')
+            now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
+            embed["footer"] = {
+                "text": f"Ostatnia synchronizacja bazy: {now}"
+            }
+
+        embeds.append(embed)
+    
+    return embeds
+
+def update_discord_message(embeds_list):
     headers = {
         "Authorization": f"Bot {DISCORD_TOKEN}",
         "Content-Type": "application/json"
@@ -176,9 +141,10 @@ def update_discord_message(embed_data):
             bot_message_id = msg["id"]
             break
 
+    # Wysyłamy teraz CAŁĄ LISTĘ osobnych bloków (maksymalnie Discord pozwala na 10)
     payload = {
         "content": "", 
-        "embeds": [embed_data]
+        "embeds": embeds_list
     }
 
     if bot_message_id:
@@ -189,5 +155,5 @@ def update_discord_message(embed_data):
         requests.post(url_post, headers=headers, json=payload)
 
 if __name__ == "__main__":
-    new_embed = build_embed()
-    update_discord_message(new_embed)
+    new_embeds = build_embeds()
+    update_discord_message(new_embeds)
