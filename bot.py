@@ -79,22 +79,29 @@ def build_status_payload():
     embeds = []
     for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
-        is_online, players = False, 0
+        is_online, players, days = False, 0, "-"
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
+                    days = live.get("day")
+                    if days is None:
+                        data_val = live.get("data", {})
+                        if isinstance(data_val, dict):
+                            days = data_val.get("day", "-")
+                        else:
+                            days = "-"
                     break
+        
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
-        
-
         spacer = "\u2800" * 36
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
+            f"Dzień: {days}\n"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
             f"Hasło: `{srv['password']}`{spacer}"
         )
