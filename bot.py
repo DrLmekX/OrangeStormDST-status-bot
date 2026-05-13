@@ -3,6 +3,7 @@ import requests
 import gzip
 import json
 import re
+import base64
 from datetime import datetime
 import pytz
 import time
@@ -76,16 +77,44 @@ def get_servers_from_klei_cdn():
     return live_servers
 
 def extract_day(live_info):
+    keys = ["day", "days", "cycles", "cycle", "server_day", "world_day"]
+    
+    def deep_search(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if str(k).lower() in keys and isinstance(v, (int, str)) and str(v).isdigit():
+                    return str(v)
+                res = deep_search(v)
+                if res: return res
+        elif isinstance(obj, list):
+            for item in obj:
+                res = deep_search(item)
+                if res: return res
+        elif isinstance(obj, str):
+            s = obj.strip()
+            if s.startswith('{'):
+                try:
+                    res = deep_search(json.loads(s))
+                    if res: return res
+                except Exception:
+                    pass
+            if len(s) > 10 and not re.search(r'\s', s):
+                try:
+                    dec = base64.b64decode(s).decode('utf-8', errors='ignore')
+                    if '{' in dec:
+                        res = deep_search(json.loads(dec))
+                        if res: return res
+                except Exception:
+                    pass
+        return None
+
+    res = deep_search(live_info)
+    if res: return res
+
     s = json.dumps(live_info)
-    m1 = re.search(r'(?i)["\']?(?:day|days|server_day|world_day)["\']?\s*[:=]\s*["\']?(\d+)["\']?', s)
-    if m1:
-        return m1.group(1)
-    m2 = re.search(r'(?i)\b(?:day|server_day|world_day)\b\s*[:=]\s*(\d+)', s)
-    if m2:
-        return m2.group(1)
-    m3 = re.search(r'(?i)\bday_(\d+)\b', s)
-    if m3:
-        return m3.group(1)
+    m = re.search(r'(?i)["\']?(?:day|days|cycles|cycle|world_day)["\']?\s*[:=]\s*["\']?(\d+)["\']?', s)
+    if m: return m.group(1)
+    
     return None
 
 def get_old_bot_message(channel_id):
