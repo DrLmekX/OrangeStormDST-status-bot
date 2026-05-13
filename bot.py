@@ -75,6 +75,28 @@ def get_servers_from_klei_cdn():
                 pass
     return live_servers
 
+def extract_day(live_info):
+    day_keys = ["day", "days", "server_day"]
+    for k in day_keys:
+        if k in live_info:
+            return str(live_info[k])
+            
+    for k, v in live_info.items():
+        if isinstance(v, dict):
+            for dk in day_keys:
+                if dk in v:
+                    return str(v[dk])
+        elif isinstance(v, str) and ('"day"' in v or '"days"' in v):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    for dk in day_keys:
+                        if dk in parsed:
+                            return str(parsed[dk])
+            except Exception:
+                pass
+    return None
+
 def get_old_bot_message(channel_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
@@ -110,15 +132,7 @@ def build_status_payload(old_message):
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
-                    
-                    days = live.get("day")
-                    if days is None and isinstance(live.get("data"), dict):
-                        days = live.get("data").get("day")
-                    if days is None and isinstance(live.get("info"), dict):
-                        days = live.get("info").get("day")
-                    
-                    if days is not None:
-                        days = str(days)
+                    days = extract_day(live)
                     break
         
         if not is_online or days is None:
