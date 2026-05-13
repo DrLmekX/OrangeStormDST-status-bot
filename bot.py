@@ -3,7 +3,6 @@ import requests
 import gzip
 import json
 import re
-import base64
 from datetime import datetime
 import pytz
 import time
@@ -76,47 +75,6 @@ def get_servers_from_klei_cdn():
                 pass
     return live_servers
 
-def extract_day(live_info):
-    keys = ["day", "days", "cycles", "cycle", "server_day", "world_day"]
-    
-    def deep_search(obj):
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                if str(k).lower() in keys and isinstance(v, (int, str)) and str(v).isdigit():
-                    return str(v)
-                res = deep_search(v)
-                if res: return res
-        elif isinstance(obj, list):
-            for item in obj:
-                res = deep_search(item)
-                if res: return res
-        elif isinstance(obj, str):
-            s = obj.strip()
-            if s.startswith('{'):
-                try:
-                    res = deep_search(json.loads(s))
-                    if res: return res
-                except Exception:
-                    pass
-            if len(s) > 10 and not re.search(r'\s', s):
-                try:
-                    dec = base64.b64decode(s).decode('utf-8', errors='ignore')
-                    if '{' in dec:
-                        res = deep_search(json.loads(dec))
-                        if res: return res
-                except Exception:
-                    pass
-        return None
-
-    res = deep_search(live_info)
-    if res: return res
-
-    s = json.dumps(live_info)
-    m = re.search(r'(?i)["\']?(?:day|days|cycles|cycle|world_day)["\']?\s*[:=]\s*["\']?(\d+)["\']?', s)
-    if m: return m.group(1)
-    
-    return None
-
 def get_old_bot_message(channel_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
     url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
@@ -133,41 +91,42 @@ def get_old_bot_message(channel_id):
 def build_status_payload(old_message):
     global_cdn_servers = get_servers_from_klei_cdn()
     
-    old_days = {}
+    old_seasons = {}
     if old_message and "embeds" in old_message:
         for embed in old_message["embeds"]:
             desc = embed.get("description", "")
             title = embed.get("title", "")
-            match = re.search(r"Dzień:\s*([0-9]+|-)", desc)
+            match = re.search(r"Pora roku:\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+|-)", desc)
             if match:
-                old_days[title] = match.group(1)
+                old_seasons[title] = match.group(1)
 
     embeds = []
     for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
-        is_online, players, days = False, 0, None
+        is_online, players, season = False, 0, None
         
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
-                    days = extract_day(live)
+                    season = live.get("season")
                     break
         
-        if not is_online or days is None:
-            days = old_days.get(srv["display_name"], "-")
+        if not is_online or season is None:
+            season = old_seasons.get(srv["display_name"], "-")
             
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         spacer = "\u2800" * 36
         
-        day_line = f"Dzień: {days}\n" if srv["type"] != "The Forge" else ""
+        season_formatted = str(season).capitalize() if season != "-" else "-"
+        season_line = f"Pora roku: {season_formatted}\n" if srv["type"] != "The Forge" else ""
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
-            f"{day_line}"
+            f"{season_line}"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
             f"Hasło: `{srv['password']}`{spacer}"
         )
