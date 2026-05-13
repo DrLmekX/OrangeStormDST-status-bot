@@ -76,25 +76,16 @@ def get_servers_from_klei_cdn():
     return live_servers
 
 def extract_day(live_info):
-    day_keys = ["day", "days", "server_day"]
-    for k in day_keys:
-        if k in live_info:
-            return str(live_info[k])
-            
-    for k, v in live_info.items():
-        if isinstance(v, dict):
-            for dk in day_keys:
-                if dk in v:
-                    return str(v[dk])
-        elif isinstance(v, str) and ('"day"' in v or '"days"' in v):
-            try:
-                parsed = json.loads(v)
-                if isinstance(parsed, dict):
-                    for dk in day_keys:
-                        if dk in parsed:
-                            return str(parsed[dk])
-            except Exception:
-                pass
+    s = json.dumps(live_info)
+    m1 = re.search(r'(?i)["\']?(?:day|days|server_day|world_day)["\']?\s*[:=]\s*["\']?(\d+)["\']?', s)
+    if m1:
+        return m1.group(1)
+    m2 = re.search(r'(?i)\b(?:day|server_day|world_day)\b\s*[:=]\s*(\d+)', s)
+    if m2:
+        return m2.group(1)
+    m3 = re.search(r'(?i)\bday_(\d+)\b', s)
+    if m3:
+        return m3.group(1)
     return None
 
 def get_old_bot_message(channel_id):
@@ -118,7 +109,7 @@ def build_status_payload(old_message):
         for embed in old_message["embeds"]:
             desc = embed.get("description", "")
             title = embed.get("title", "")
-            match = re.search(r"Dzień:\s*([0-9]+)", desc)
+            match = re.search(r"Dzień:\s*([0-9]+|-)", desc)
             if match:
                 old_days[title] = match.group(1)
 
