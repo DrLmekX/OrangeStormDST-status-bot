@@ -1,11 +1,11 @@
 import os
 import requests
+import gzip
 import json
 import re
 from datetime import datetime
 import pytz
 import time
-import a2s
 
 DISCORD_TOKEN = os.environ.get('DISCORD_TOKEN')
 CHANNEL_ID_STATUS = "1429513092538044528"
@@ -16,30 +16,64 @@ CHANNEL_ID_BOT_EDIT = "1501319921743691866"
 
 SERVERS = [
     {
+        "search_name": "OrangeStormDST | Classic",
         "display_name": "[PL] OrangeStormDST | Classic | Najlepszy Polski Serwer!",
         "type": "Classic",
         "password": "OrangeStorm2101",
-        "hard_max_players": 24,
-        "ip": "127.0.0.1",
-        "query_port": 27016
+        "hard_max_players": 24
     },
     {
+        "search_name": "OrangeStormDST | Shipwrecked",
         "display_name": "[PL] OrangeStormDST | Shipwrecked | Najlepszy Polski Serwer!",
         "type": "Shipwrecked",
         "password": "OrangeStorm7777",
-        "hard_max_players": 12,
-        "ip": "127.0.0.1",
-        "query_port": 27019
+        "hard_max_players": 12
     },
     {
+        "search_name": "OrangeStormDST | Forge",
         "display_name": "[PL] OrangeStormDST | Forge | Najlepszy Polski Serwer!",
         "type": "The Forge",
         "password": "OrangeStorm2026",
-        "hard_max_players": 6,
-        "ip": "127.0.0.1",
-        "query_port": 27018
+        "hard_max_players": 6
     }
 ]
+
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/html, */*',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+}
+
+def get_servers_from_klei_cdn():
+    regions = ['eu-central-1', 'us-east-1', 'ap-southeast-1', 'us-west-1']
+    platforms = ['Steam', 'steam']
+    live_servers = []
+    for region in regions:
+        for platform in platforms:
+            url = f"https://lobby-v2-cdn.klei.com/{region}-{platform}.json.gz"
+            try:
+                response = requests.get(url, headers=BROWSER_HEADERS, timeout=8)
+                if response.status_code == 200:
+                    try:
+                        dec = gzip.decompress(response.content)
+                        data = json.loads(dec)
+                    except Exception:
+                        data = response.json()
+                    servers = []
+                    if isinstance(data, dict):
+                        for k, v in data.items():
+                            if isinstance(v, list):
+                                servers = v
+                                break
+                    elif isinstance(data, list):
+                        servers = data
+                    if servers:
+                        live_servers.extend(servers)
+                        break
+            except Exception:
+                pass
+    return live_servers
 
 def get_old_bot_message(channel_id):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
@@ -55,46 +89,44 @@ def get_old_bot_message(channel_id):
     return None
 
 def build_status_payload(old_message):
-    old_days = {}
+    global_cdn_servers = get_servers_from_klei_cdn()
+    
+    old_seasons = {}
     if old_message and "embeds" in old_message:
         for embed in old_message["embeds"]:
             desc = embed.get("description", "")
             title = embed.get("title", "")
-            match = re.search(r"Dzień:\s*([0-9]+|-)", desc)
+            match = re.search(r"Pora roku:\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+|-)", desc)
             if match:
-                old_days[title] = match.group(1)
+                old_seasons[title] = match.group(1)
 
     embeds = []
     for idx, srv in enumerate(SERVERS):
-        is_online, players, days = False, 0, None
+        search_name = srv["search_name"]
+        is_online, players, season = False, 0, None
         
-        try:
-            address = (srv["ip"], srv["query_port"])
-            info = a2s.info(address, timeout=2.0)
-            is_online = True
-            players = info.player_count
-            
-            rules = a2s.rules(address, timeout=2.0)
-            for k, v in rules.items():
-                if k.lower() in ["day", "days", "server_day", "cycles", "current_day"]:
-                    days = str(v)
+        if global_cdn_servers:
+            for live in global_cdn_servers:
+                if search_name in live.get("name", ""):
+                    is_online = True
+                    players = live.get("connected", 0)
+                    season = live.get("season")
                     break
-        except Exception:
-            pass
         
-        if not is_online or days is None:
-            days = old_days.get(srv["display_name"], "-")
+        if not is_online or season is None:
+            season = old_seasons.get(srv["display_name"], "-")
             
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         spacer = "\u2800" * 36
         
-        day_line = f"Dzień: {days}\n" if srv["type"] != "The Forge" else ""
+        season_formatted = str(season).capitalize() if season != "-" else "-"
+        season_line = f"Pora roku: {season_formatted}\n" if srv["type"] != "The Forge" else ""
         
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
-            f"{day_line}"
+            f"{season_line}"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
             f"Hasło: `{srv['password']}`{spacer}"
         )
