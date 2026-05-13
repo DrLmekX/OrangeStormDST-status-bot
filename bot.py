@@ -2,6 +2,7 @@ import os
 import requests
 import gzip
 import json
+import re
 from datetime import datetime
 import pytz
 import time
@@ -74,47 +75,82 @@ def get_servers_from_klei_cdn():
                 pass
     return live_servers
 
-def build_status_payload():
+def get_old_bot_message(channel_id):
+    headers = {"Authorization": f"Bot {DISCORD_TOKEN}"}
+    url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    try:
+        response = requests.get(url_get, headers=headers)
+        if response.status_code == 200:
+            for msg in response.json():
+                if msg.get("author", {}).get("bot") is True:
+                    return msg
+    except Exception:
+        pass
+    return None
+
+def build_status_payload(old_message):
     global_cdn_servers = get_servers_from_klei_cdn()
+    
+    old_days = {}
+    if old_message and "embeds" in old_message:
+        for embed in old_message["embeds"]:
+            desc = embed.get("description", "")
+            title = embed.get("title", "")
+            match = re.search(r"Dzień:\s*([0-9]+)", desc)
+            if match:
+                old_days[title] = match.group(1)
+
     embeds = []
     for idx, srv in enumerate(SERVERS):
         search_name = srv["search_name"]
-        is_online, players, days = False, 0, "-"
+        is_online, players, days = False, 0, None
+        
         if global_cdn_servers:
             for live in global_cdn_servers:
                 if search_name in live.get("name", ""):
                     is_online = True
                     players = live.get("connected", 0)
+                    
                     days = live.get("day")
-                    if days is None:
-                        data_val = live.get("data", {})
-                        if isinstance(data_val, dict):
-                            days = data_val.get("day", "-")
-                        else:
-                            days = "-"
+                    if days is None and isinstance(live.get("data"), dict):
+                        days = live.get("data").get("day")
+                    if days is None and isinstance(live.get("info"), dict):
+                        days = live.get("info").get("day")
+                    
+                    if days is not None:
+                        days = str(days)
                     break
         
+        if not is_online or days is None:
+            days = old_days.get(srv["display_name"], "-")
+            
         status_icon = "🟢" if is_online else "🔴"
         status_text = "Online" if is_online else "Offline"
         spacer = "\u2800" * 36
         
+        day_line = f"Dzień: {days}\n" if srv["type"] != "The Forge" else ""
+        
         description = (
             f"Status: {status_icon} **{status_text}**\n"
             f"Tryb gry: {srv['type']}\n"
-            f"Dzień: {days}\n"
+            f"{day_line}"
             f"Gracze: {players} / {srv['hard_max_players']}\n"
             f"Hasło: `{srv['password']}`{spacer}"
         )
+        
         embed = {
             "title": srv['display_name'],
             "description": description,
             "color": 0xDF6900
         }
+        
         if idx == len(SERVERS) - 1:
             tz = pytz.timezone('Europe/Warsaw')
             now = datetime.now(tz).strftime("%d.%m.%Y %H:%M:%S")
             embed["footer"] = {"text": f"Ostatnia synchronizacja bazy: {now}"}
+            
         embeds.append(embed)
+        
     return {"content": "", "embeds": embeds}
 
 def build_rules_payload():
@@ -204,18 +240,19 @@ def discord_post_new(channel_id, payload):
     requests.post(url_post, headers=headers, json=payload)
     time.sleep(1)
 
-def update_discord_message(channel_id, payload):
+def update_discord_message(channel_id, payload, existing_msg=None):
     headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
-    url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
-    response = requests.get(url_get, headers=headers)
-    if response.status_code != 200:
-        return
-    messages = response.json()
-    bot_message_id = None
-    for msg in messages:
-        if msg.get("author", {}).get("bot") is True:
-            bot_message_id = msg["id"]
-            break
+    bot_message_id = existing_msg["id"] if existing_msg else None
+    
+    if not bot_message_id:
+        url_get = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        response = requests.get(url_get, headers=headers)
+        if response.status_code == 200:
+            for msg in response.json():
+                if msg.get("author", {}).get("bot") is True:
+                    bot_message_id = msg["id"]
+                    break
+                    
     if bot_message_id:
         url_patch = f"https://discord.com/api/v10/channels/{channel_id}/messages/{bot_message_id}"
         requests.patch(url_patch, headers=headers, json=payload)
@@ -250,5 +287,7 @@ if __name__ == "__main__":
     process_admin_commands()
     update_discord_message(CHANNEL_ID_BOT_EDIT, build_instructions_payload())
     if CHANNEL_ID_STATUS:
-        update_discord_message(CHANNEL_ID_STATUS, build_status_payload())
+        old_msg = get_old_bot_message(CHANNEL_ID_STATUS)
+        payload = build_status_payload(old_msg)
+        update_discord_message(CHANNEL_ID_STATUS, payload, old_msg)
     update_discord_message(CHANNEL_ID_RULES, build_rules_payload())
